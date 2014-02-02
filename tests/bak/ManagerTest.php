@@ -16,15 +16,15 @@ class ManagerTest extends \PHPUnit_Framework_TestCase
 
     public function setUp()
     {
-        $factory    = new Factory();
-        $descriptor = new Descriptor();
+        $factory    = new Manager();
+        $descriptor = new ClassDescriptor();
 
         $this->manager = new Manager($factory, $descriptor);
     }
 
     public function testAdd()
     {
-        $descriptor = new Descriptor();
+        $descriptor = new ClassDescriptor();
 
         $descriptor->setManager($this->manager);
 

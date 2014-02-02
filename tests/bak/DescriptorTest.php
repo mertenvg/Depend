@@ -8,13 +8,13 @@ use ReflectionClass;
 class DescriptorTest extends \PHPUnit_Framework_TestCase
 {
     /**
-     * @var Descriptor
+     * @var ClassDescriptor
      */
     protected $descriptor;
 
     public function setUp()
     {
-        $this->descriptor = new Descriptor();
+        $this->descriptor = new ClassDescriptor();
     }
 
     /**
@@ -22,7 +22,7 @@ class DescriptorTest extends \PHPUnit_Framework_TestCase
      */
     public function testManagerDependency()
     {
-        $descriptor = new Descriptor();
+        $descriptor = new ClassDescriptor();
 
         $descriptor->load(new ReflectionClass('ClassF'));
     }
@@ -139,9 +139,9 @@ class DescriptorTest extends \PHPUnit_Framework_TestCase
     {
         $name = 'testing';
 
-        $this->descriptor->setName($name);
+        $this->descriptor->setClassName($name);
 
-        $this->assertEquals($name, $this->descriptor->getName());
+        $this->assertEquals($name, $this->descriptor->getClassName());
     }
 
     public function testAlias()

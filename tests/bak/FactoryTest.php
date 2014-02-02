@@ -7,13 +7,13 @@ use Depend\Exception\RuntimeException;
 class FactoryTest extends \PHPUnit_Framework_TestCase
 {
     /**
-     * @var Factory
+     * @var Manager
      */
     protected $factory;
 
     public function setUp()
     {
-        $this->factory = new Factory();
+        $this->factory = new Manager();
     }
 
     public function testCreate()

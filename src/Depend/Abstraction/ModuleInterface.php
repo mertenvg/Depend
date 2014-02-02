@@ -7,11 +7,13 @@ use Depend\Manager;
 interface ModuleInterface
 {
     /**
-     * Register the modules classes and interfaces with Depend\Manager
+     * Register the modules classes and interfaces with Manager
+
      *
-     * @param Manager $dm
+*@param Manager $depend
+
      *
-     * @return void
+*@return void
      */
-    public function register(Manager $dm);
+    public function register(Manager $depend);
 }

@@ -1,6 +1,9 @@
 <?php
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../fixtures/InterfaceThree.php';
+require_once __DIR__ . '/../fixtures/InterfaceTwo.php';
+require_once __DIR__ . '/../fixtures/InterfaceOne.php';
 require_once __DIR__ . '/../fixtures/ClassA.php';
 require_once __DIR__ . '/../fixtures/ClassB.php';
 require_once __DIR__ . '/../fixtures/ClassC.php';
@@ -9,7 +12,6 @@ require_once __DIR__ . '/../fixtures/ClassE.php';
 require_once __DIR__ . '/../fixtures/ClassF.php';
 require_once __DIR__ . '/../fixtures/ClassOne.php';
 require_once __DIR__ . '/../fixtures/ClassXA.php';
-require_once __DIR__ . '/../fixtures/InterfaceOne.php';
 require_once __DIR__ . '/../fixtures/ClassCircularRefA.php';
 require_once __DIR__ . '/../fixtures/ClassCircularRefB.php';
 require_once __DIR__ . '/../fixtures/ClassNoInstance.php';

@@ -1,4 +1,4 @@
-# Depend
+# Manager
 
 Less Configuration, More Injection
 
@@ -6,7 +6,7 @@ Less Configuration, More Injection
 
 ## Introduction
 
-Depend attempts to make it simpler and easier for developers to take advantage of IOC by automating as much of the process as possible.
+Manager attempts to make it simpler and easier for developers to take advantage of IOC by automating as much of the process as possible.
 
 The only coding requirement is that your dependencies are clearly defined in the constructors of the classes you are writing. For example;
 
@@ -50,7 +50,7 @@ Add `"codeblanche/entity": "1.*"` to the `require` section of your projects comp
 /*
  * Create an instance of the Manager.
  */
-$dm  = new \Depend\Manager();
+$dm  = new \Manager\Manager();
 
 /*
  * Get an instance of your application class with simple 
@@ -62,16 +62,16 @@ $app = $dm->get('MyApplication');
 
 ## A little more advanced usage
 
-See [fixtures](https://github.com/CodeBlanche/Depend/tree/master/fixtures) for the classes being used in this example.
+See [fixtures](https://github.com/CodeBlanche/Manager/tree/master/fixtures) for the classes being used in this example.
 
 ```php
 <?php
 
 /*
- * Depend throws exceptions so we can catch them.
+ * Manager throws exceptions so we can catch them.
  *
- * - \Depend\Exception\InvalidArgumentException
- * - \Depend\Exception\RuntimeException
+ * - \Manager\Exception\InvalidArgumentException
+ * - \Manager\Exception\RuntimeException
  */
 try {
 
@@ -81,10 +81,10 @@ try {
      * (1) FactoryInterface    $factory
      * (2) DescriptorInterface $descriptorPrototype
      *
-     * When the parameters are not provided Depend will use
+     * When the parameters are not provided Manager will use
      * it's own internal implementations.
      */
-    $dm = new \Depend\Manager();
+    $dm = new \Manager\Manager();
 
     /*
      * Create an InjectorFactory if you need to inject
@@ -92,31 +92,31 @@ try {
      *
      * For advanced developers you can override the injector
      * prototype by providing an instance of your own
-     * \Depend\Abstraction\InjectorInterface implementation
+     * \Manager\Abstraction\InjectorInterface implementation
      * as the first and only optional argument.
      */
-    /** @var $if \Depend\InjectorFactory */
-    $if = $dm->get('\Depend\InjectorFactory');
+    /** @var $if \Manager\InjectorFactory */
+    $if = $dm->get('\Manager\InjectorFactory');
 
     /*
-     * Load a module that implements \Depend\Abstraction\ModuleInterface
+     * Load a module that implements \Manager\Abstraction\ModuleInterface
      * to defer configuration of classes and implementation to independent
      * modules.
      *
-     * Our recommendation is to include a /Depend/Module.php within your module
+     * Our recommendation is to include a /Manager/Module.php within your module
      * root.
      *
      * Note: Module order does matter. Modules loaded later may override
      * implementation and definitions created in prior loaded modules.
      */
-    $dm->module('\My\Own\Custom\Module\Depend\Module');
+    $dm->module('\My\Own\Custom\Module\Manager\Module');
 
     /*
      * Tell the manager that any dependencies on InterfaceOne
      * should receive an instance of ClassOne.
      *
      * If your class does not implement the interface you can
-     * expect an \Depend\Exception\InvalidArgumentException.
+     * expect an \Manager\Exception\InvalidArgumentException.
      */
     $dm->implement('InterfaceOne', 'ClassOne');
 
@@ -125,13 +125,13 @@ try {
      * the constructor or make use of setter methods to inject
      * it's dependencies.
      *
-     * To facilitate this Depend makes use of Descriptors. You
+     * To facilitate this Manager makes use of Descriptors. You
      * can use the Managers 'describe' method to describe the
      * additional requirements of a class. If there are no specific
-     * requirements Depend will automatically be able to link up
+     * requirements Manager will automatically be able to link up
      * the dependencies by reflecting the class in question.
      *
-     * \Depend\Manager::describe takes the following arguments;
+     * \Manager\Manager::describe takes the following arguments;
      *
      * (1) string                   $className
      * (2) array<mixed>             $params [optional]
@@ -142,14 +142,14 @@ try {
      * it's namespace.
      *
      * $params can be specified by name using 'paramName' => 'paramValue'
-     * or by index 0 => 'paramValue'. You may also provide a \Depend\Descriptor
+     * or by index 0 => 'paramValue'. You may also provide a \Manager\ClassDescriptor
      * returned by the describe method as a paramValue so that it can be
      * resolved at the time of creating your class.
      *
      * $actions must be an array containing only InjectorInterface
      * implementations. Other objects/values will be ignored.
      *
-     * $reflectionClass is used internally by Depend for optimization
+     * $reflectionClass is used internally by Manager for optimization
      * purposes to avoid recreating ReflectionClass objects.
      */
     $dm->describe(

@@ -2,34 +2,80 @@
 
 namespace Depend;
 
-use Depend\Abstraction\DescriptorInterface;
-use Depend\Abstraction\FactoryInterface;
-use Depend\Exception\RuntimeException;
+use ReflectionClass;
+use ReflectionMethod;
+use RuntimeException;
 
-class Factory implements FactoryInterface
+class Factory
 {
     /**
-     * @param DescriptorInterface $descriptor
-     * @param Manager             $manager
+     * @param string $className
      *
-     * @throws Exception\RuntimeException
-     * @return object
+     * @return ReflectionClass
+     * @throws RuntimeException
      */
-    public function create(DescriptorInterface $descriptor, Manager $manager)
+    public function createReflectionClass($className)
     {
-        $reflectionClass = $descriptor->getReflectionClass();
-        $class           = $reflectionClass->getName();
-
-        if (!$reflectionClass->isInstantiable()) {
-            throw new RuntimeException("Class '$class' is is not instantiable");
+        if (!class_exists($className) && !interface_exists($className)) {
+            throw new RuntimeException("Unable to create reflection object. Class '$className' could not be found");
         }
 
-        $args = $manager->resolveParams($descriptor->getParams());
-
-        if (empty($args)) {
-            return $instance = $reflectionClass->newInstance();
-        }
-
-        return $instance = $reflectionClass->newInstanceArgs($args);
+        return new ReflectionClass($className);
     }
-}
+
+    /**
+     * @param string $className
+     * @param string $methodName
+     *
+     * @return ReflectionMethod
+     * @throws \RuntimeException
+     */
+    public function createReflectionMethod($className, $methodName)
+    {
+        if (!class_exists($className) && !interface_exists($className)) {
+            throw new RuntimeException("Unable to create reflection object. Class '$className' could not be found");
+        }
+
+        return new ReflectionMethod($className, $methodName);
+    }
+
+    /**
+     * Create a class descriptor
+     *
+     * @param Manager          $manager
+     * @param ReflectionClass  $class
+     * @param MethodDescriptor $constructor
+     *
+     * @return ClassDescriptor
+     */
+    public function createClassDescriptor(
+        Manager $manager,
+        ReflectionClass $class,
+        MethodDescriptor $constructor = null
+    ) {
+        return new ClassDescriptor($manager, $class, $constructor);
+    }
+
+    /**
+     * Create a method descriptor
+     *
+     * @param Manager          $manager
+     * @param ReflectionMethod $method
+     *
+     * @return MethodDescriptor
+     */
+    public function createMethodDescriptor(Manager $manager, ReflectionMethod $method)
+    {
+        return new MethodDescriptor($manager, $method);
+    }
+
+    /**
+     * Create a descriptor cache object
+     *
+     * @return DescriptorCache
+     */
+    public function createDescriptorCache()
+    {
+        return new DescriptorCache();
+    }
+} 

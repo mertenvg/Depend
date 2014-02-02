@@ -2,31 +2,22 @@
 
 namespace Depend;
 
-use Depend\Abstraction\ActionInterface;
-use Depend\Abstraction\DescriptorInterface;
-use Depend\Abstraction\FactoryInterface;
-use Depend\Abstraction\InjectorInterface;
 use Depend\Abstraction\ModuleInterface;
-use Depend\Exception\InvalidArgumentException;
-use Depend\Exception\RuntimeException;
+use InvalidArgumentException;
 use ReflectionClass;
+use RuntimeException;
 
 class Manager
 {
     /**
-     * @var DescriptorInterface
+     * @var ReflectionClass[]
      */
-    protected $descriptorPrototype;
+    protected $reflections = array();
 
     /**
-     * @var DescriptorInterface[]
+     * @var DescriptorCache
      */
-    protected $descriptors = array();
-
-    /**
-     * @var FactoryInterface
-     */
-    protected $factory;
+    protected $descriptors;
 
     /**
      * @var object[]
@@ -34,122 +25,164 @@ class Manager
     protected $instances = array();
 
     /**
-     * @var DescriptorInterface[]
+     * @var Factory
      */
-    protected $named = array();
+    protected $factory;
 
     /**
-     * @var array Queue to aid in the fight against circular dependencies.
+     * Default constructor.
+     *
+     * @param Factory $factory
      */
-    protected $queue = array();
-
-    /**
-     * @param FactoryInterface    $factory
-     * @param DescriptorInterface $descriptorPrototype
-     */
-    public function __construct(FactoryInterface $factory = null, DescriptorInterface $descriptorPrototype = null)
+    function __construct(Factory $factory = null)
     {
-        if (!($factory instanceof FactoryInterface)) {
+        if (!$factory instanceof Factory) {
             $factory = new Factory;
         }
 
-        if (!($descriptorPrototype instanceof DescriptorInterface)) {
-            $descriptorPrototype = new Descriptor;
-        }
-
-        $this->descriptorPrototype = $descriptorPrototype;
-        $this->factory             = $factory;
-
-        $this->descriptorPrototype->setManager($this);
-
-        $this->implement('Depend\Abstraction\FactoryInterface', 'Depend\Factory');
-        $this->implement('Depend\Abstraction\DescriptorInterface', 'Depend\Descriptor')->setIsShared(false);
-        $this->implement('Depend\Abstraction\InjectorInterface', 'Depend\Injector');
-        $this->describe('Depend\Manager');
-        $this->set('Depend\Manager', $this);
-        $this->set('Depend\Factory', $factory);
-        $this->set('Depend\Descriptor', $descriptorPrototype);
+        $this->factory     = $factory;
+        $this->descriptors = $factory->createDescriptorCache();
     }
 
     /**
-     * Register a module object or class to register it's own dependencies.
+     * @param       $name
+     * @param array $paramsOverride
      *
-     * @param ModuleInterface|string $module
-     *
-     * @return $this
-     * @throws Exception\InvalidArgumentException
+     * @throws \RuntimeException
+     * @return object
      */
-    public function module($module)
+    public function get($name, $paramsOverride = array())
     {
-        if (is_object($module)) {
-            if (!($module instanceof ModuleInterface)) {
-                $moduleType = get_class($module);
+        $key = $this->normalizeName($name);
 
-                throw new InvalidArgumentException("Given module object '$moduleType' does not implement 'Depend\\Abstraction\\ModuleInterface'");
+        $descriptor      = $this->descriptors->get($key);
+        $reflectionClass = $this->resolveReflectionClass($name);
+        $class           = $reflectionClass->getName();
+
+        if ($descriptor->isShared() && isset($this->instances[$key])) {
+            return $this->instances[$key];
+        }
+
+        if ($descriptor->isCloneable() && isset($this->instances[$key])) {
+            return clone $this->instances[$key];
+        }
+
+        if (!$reflectionClass->isInstantiable()) {
+            throw new RuntimeException("Class '$class' is is not instantiable");
+        }
+
+        $this->instances[$key] = null;
+
+        $args = $this->resolveParams(
+            array_replace($descriptor->getParams(), $paramsOverride)
+        );
+
+        if (empty($args)) {
+            $instance = $reflectionClass->newInstance();
+        }
+        else {
+            $instance = $reflectionClass->newInstanceArgs($args);
+        }
+
+        $this->instances[$key] = $instance;
+
+        $actions = $descriptor->getActions();
+
+        /** @var $action MethodDescriptor */
+        foreach ($actions as $method => $action) {
+            if ($action instanceof MethodDescriptor) {
+                $method = $action->getName();
+                $params = $action->getParams();
+            }
+            else {
+                $params = $action;
             }
 
-            $module->register($this);
-
-            return $this;
+            if (method_exists($instance, $method)) {
+                call_user_func_array(
+                    array($instance, $method),
+                    $this->resolveParams($params)
+                );
+            }
         }
 
-        if (!class_exists((string) $module)) {
-            throw new InvalidArgumentException("Given class name '$module' could not be found");
-        }
-
-        return $this->module(new $module);
+        return $instance;
     }
 
     /**
-     * Add a class descriptor to the managers collection.
+     * @param $className
      *
-     * @param Abstraction\DescriptorInterface $descriptor
+     * @return ReflectionClass
+     * @throws \InvalidArgumentException
      */
-    public function add(DescriptorInterface $descriptor)
+    protected function resolveReflectionClass($className)
     {
-        $key = $this->makeKey($descriptor->getName());
+        if (!class_exists($className) && !interface_exists($className)) {
+            throw new InvalidArgumentException("Class '$className' could not be found");
+        }
 
-        $descriptor->setManager($this);
+        $key = $this->normalizeName($className);
 
-        $this->descriptors[$key] = $descriptor;
+        if (isset($this->reflections[$key])) {
+            return $this->reflections[$key];
+        }
+
+        $this->reflections[$key] = $this->factory->createReflectionClass($className);
+
+        return $this->reflections[$key];
     }
 
     /**
-     * @param string              $alias
-     * @param DescriptorInterface $prototype
-     * @param array               $params
-     * @param array               $actions
+     * Register an implementation of the given interface
      *
-     * @return Descriptor|DescriptorInterface
+     * @param string $interface
+     * @param string $className
+     * @param array  $actions
+     *
+     * @return ClassDescriptor
+     * @throws \InvalidArgumentException
      */
-    public function alias($alias, DescriptorInterface $prototype, $params = null, $actions = null)
+    public function implement($interface, $className, array $actions = array())
     {
-        $descriptor = clone $prototype;
+        if (!$this->resolveReflectionClass($className)->implementsInterface($interface)) {
+            throw new InvalidArgumentException("Given class '$className' does not implement '$interface'");
+        }
 
-        $descriptor->setParams($params)->setActions($actions)->setName($alias);
+        $descriptor = $this->describe($interface, array(), $actions, $className);
 
-        $key                     = $this->makeKey($alias);
-        $this->descriptors[$key] = $descriptor;
+        $this->descriptors->set(
+            $this->normalizeName($interface),
+            $descriptor
+        );
 
         return $descriptor;
     }
 
     /**
-     * @param string          $className
-     * @param array           $params
-     * @param array           $actions
-     * @param ReflectionClass $reflectionClass
+     * @param        $name
+     * @param array  $params
+     * @param array  $actions
+     * @param null   $implementation
      *
-     * @throws Exception\RuntimeException
-     * @throws Exception\InvalidArgumentException
-     * @return Descriptor|DescriptorInterface
+     * @return ClassDescriptor
+     * @throws \RuntimeException
+     * @throws \InvalidArgumentException
      */
-    public function describe($className, $params = null, $actions = null, ReflectionClass $reflectionClass = null)
+    public function describe($name, array $params = array(), array $actions = array(), $implementation = null)
     {
-        $key = $this->makeKey($className);
+        $key = $this->normalizeName($name);
 
-        if (isset($this->descriptors[$key])) {
-            $descriptor = $this->descriptors[$key];
+        if (!empty($implementation)) {
+            $descriptor = $this->describe($implementation, $params, $actions);
+
+            $this->descriptors->set($key, $descriptor);
+
+            return $descriptor;
+        }
+
+        if ($this->descriptors->has($key)) {
+            /** @var $descriptor ClassDescriptor */
+            $descriptor = $this->descriptors->get($key);
             $descriptor->setParams($params);
 
             if (!is_null($actions)) {
@@ -159,86 +192,76 @@ class Manager
             return $descriptor;
         }
 
-        if (!class_exists($className) && !interface_exists($className)) {
-            throw new InvalidArgumentException("Class '$className' could not be found");
-        }
+        $reflectionClass = $this->resolveReflectionClass($name);
+        $constructor     = $reflectionClass->getConstructor();
+        $descriptor      = $this->factory->createClassDescriptor(
+            $this,
+            $reflectionClass,
+            !is_null($constructor) ? $this->factory->createMethodDescriptor($this, $constructor) : null
+        );
+        $descriptor->setActions($actions);
+        $descriptor->setParams($params);
 
-        if (!($reflectionClass instanceof ReflectionClass)) {
-            $reflectionClass = new ReflectionClass($className);
-        }
-
-        if ($reflectionClass->isInterface()) {
-            throw new RuntimeException("Given class name '$className' is an interface.\nPlease use the 'Manager::implement({interfaceName}, {className})' method to describe your implementation class.");
-        }
-
-        $descriptor = clone $this->descriptorPrototype;
-
-        $this->descriptors[$key] = $descriptor;
-
-        $descriptor->load($reflectionClass)->setParams($params)->setActions($actions);
+        $this->descriptors->set($key, $descriptor);
 
         return $descriptor;
     }
 
     /**
-     * @param string $name Class name or alias
-     * @param array  $paramsOverride
+     * Register an implementation of ModuleInterface
      *
-     * @return object
+     * @param string $className
+     *
+     * @return $this
+     * @throws InvalidArgumentException
      */
-    public function get($name, $paramsOverride = null)
+    public function module($className)
     {
-        $descriptor = $this->describe($name);
-        $key        = $this->makeKey($name);
-        $instance   = null;
-
-        if (is_array($paramsOverride) && !empty($paramsOverride)) {
-            $descriptor = clone $descriptor;
-            $descriptor->setParams($paramsOverride);
-
-            return $this->create($descriptor);
+        if (!class_exists((string) $className)) {
+            throw new InvalidArgumentException("Module class '$className' could not be found");
         }
 
-        if (!isset($this->instances[$key])) {
-            $instance = $this->create($descriptor, $this->instances[$key]);
+        $module = new $className;
+
+        if (!($module instanceof ModuleInterface)) {
+            throw new InvalidArgumentException("Module class '$className' mustimplement 'Manager\\Abstraction\\ModuleInterface'");
         }
 
-        if ($descriptor->isShared()) {
-            return $this->instances[$key];
-        }
+        $module->register($this);
 
-        if ($descriptor->isCloneable()) {
-            return clone $this->instances[$key];
-        }
-
-        if (is_null($instance)) {
-            $instance = $this->create($descriptor);
-        }
-
-        unset($this->instances[$key]);
-
-        return $instance;
+        return $this;
     }
 
     /**
-     * @param string $interface
-     * @param string $name
+     * Create an action descriptor
      *
-     * @throws Exception\InvalidArgumentException
-     * @return Descriptor|DescriptorInterface
+     * @param string $className
+     * @param string $methodName
+     * @param array  $params
+     *
+     * @return MethodDescriptor
      */
-    public function implement($interface, $name)
+    public function action($className, $methodName, array $params = array())
     {
-        $descriptor = $this->describe($name);
+        $reflectionMethod = $this->factory->createReflectionMethod($className, $methodName);
+        $method           = $this->factory->createMethodDescriptor($this, $reflectionMethod);
 
-        if (!$descriptor->getReflectionClass()->implementsInterface($interface)) {
-            throw new InvalidArgumentException("Given class '$name' does not implement '$interface'");
-        }
+        $method->setParams($params);
 
-        $key                     = $this->makeKey($interface);
-        $this->descriptors[$key] = $descriptor;
+        return $method;
+    }
 
-        return $descriptor;
+    /**
+     * Normalize a class name to reduce possibility of conflicts
+     * and mismatches due to case insensitivity.
+     *
+     * @param string $className
+     *
+     * @return string
+     */
+    protected function normalizeName($className)
+    {
+        return trim(strtolower($className), '\\');
     }
 
     /**
@@ -248,104 +271,20 @@ class Manager
      *
      * @return array
      */
-    public function resolveParams($params)
+    protected function resolveParams(array $params)
     {
-        $resolved = array();
+        if (empty($params)) {
+            return $params;
+        }
 
-        foreach ($params as $param) {
-            if ($param instanceof DescriptorInterface) {
-                $resolved[] = $this->get($param->getName());
-
+        foreach ($params as $key => $param) {
+            if (!$param instanceof ClassDescriptor) {
                 continue;
             }
 
-            $resolved[] = $param;
+            $params[$key] = $this->get($param->getName());
         }
 
-        return $resolved;
-    }
-
-    /**
-     * Store an instance for injection by class name or alias.
-     *
-     * @param string $name Class name or alias
-     * @param object $instance
-     *
-     * @return Manager
-     */
-    public function set($name, $instance)
-    {
-        $key = $this->makeKey($name);
-
-        $this->alias($name, $this->describe(get_class($instance)));
-
-        $this->instances[$key] = $instance;
-
-        return $this;
-    }
-
-    /**
-     * Create an instance of the given class descriptor
-     *
-     * @param Abstraction\DescriptorInterface $descriptor
-     * @param object                          $instance
-     *
-     * @throws Exception\RuntimeException
-     * @return object
-     */
-    protected function create(DescriptorInterface $descriptor, &$instance = null)
-    {
-        $class = $descriptor->getReflectionClass()->getName();
-
-        if (in_array($class, $this->queue)) {
-            $parent = end($this->queue);
-
-            throw new RuntimeException("Circular dependency found for class '$class' in class '$parent'. Please use a setter method to resolve this.");
-        }
-
-        array_push($this->queue, $class);
-
-        $instance = $this->factory->create($descriptor, $this);
-
-        array_pop($this->queue);
-
-        $this->executeActions($descriptor->getActions(), $instance);
-
-        return $instance;
-    }
-
-    /**
-     * @param array  $actions
-     * @param object $instance
-     */
-    protected function executeActions($actions, $instance)
-    {
-        if (!is_array($actions) || empty($actions)) {
-            return;
-        }
-
-        foreach ($actions as $action) {
-            if (!($action instanceof ActionInterface)) {
-                continue;
-            }
-
-            if ($action instanceof InjectorInterface) {
-                $action->setParams($this->resolveParams($action->getParams()));
-            }
-
-            $action->execute($instance);
-        }
-
-        return;
-    }
-
-    /**
-     * @param string $name Class name or alias
-     *
-     * @return string
-     */
-    protected function makeKey($name)
-    {
-        return trim(strtolower($name), '\\');
+        return $params;
     }
 }
